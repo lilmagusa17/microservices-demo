@@ -1,21 +1,74 @@
 name: Infra Deploy
 
+# Triggered when infrastructure changes are merged into staging or production.
+# Deploys ONLY Kafka + PostgreSQL using docker-compose.infra.yml.
+# Application services are NOT touched by this pipeline.
+
 on:
   push:
     branches: [staging, production]
+    paths:
+      - 'infrastructure/**'
+      - 'docker-compose.infra.yml'
+      - '.github/workflows/infra.yml'
 
 jobs:
   deploy-infra:
+    name: Deploy Infrastructure (Kafka + PostgreSQL)
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install Okteto
-        run: curl https://get.okteto.com -sSfL | sh
+      - name: Validate docker-compose.infra.yml
+        run: docker compose -f docker-compose.infra.yml config
 
-      - name: Okteto Login
-        run: okteto login --token ${{ secrets.OKTETO_TOKEN }}
+      - name: Pull infrastructure images
+        run: docker compose -f docker-compose.infra.yml pull
 
-      - name: Deploy Infrastructure
-        run: okteto deploy -f okteto.yml
+      - name: Start infrastructure services
+        run: docker compose -f docker-compose.infra.yml up -d
+
+      - name: Wait for PostgreSQL to be healthy
+        run: |
+          echo "Waiting for PostgreSQL..."
+          timeout 60 bash -c \
+            'until docker compose -f docker-compose.infra.yml exec -T postgresql pg_isready -U okteto -d votes; do sleep 3; done'
+          echo "✅ PostgreSQL is ready"
+
+      - name: Wait for Kafka to be healthy
+        run: |
+          echo "Waiting for Kafka (up to 120s)..."
+          timeout 120 bash -c \
+            'until docker compose -f docker-compose.infra.yml exec -T kafka \
+              /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1; \
+              do sleep 5; done'
+          echo "✅ Kafka is ready"
+
+      - name: Verify Kafka topic creation
+        run: |
+          docker compose -f docker-compose.infra.yml exec -T kafka \
+            /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server localhost:9092 \
+              --create --if-not-exists \
+              --topic votes \
+              --partitions 1 \
+              --replication-factor 1
+          echo "✅ Topic 'votes' exists"
+
+      - name: Infrastructure status summary
+        run: |
+          echo "=== Container Status ==="
+          docker compose -f docker-compose.infra.yml ps
+          echo ""
+          echo "=== PostgreSQL version ==="
+          docker compose -f docker-compose.infra.yml exec -T postgresql psql -U okteto -d votes -c "SELECT version();"
+          echo ""
+          echo "=== Kafka topics ==="
+          docker compose -f docker-compose.infra.yml exec -T kafka \
+            /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.infra.yml logs
