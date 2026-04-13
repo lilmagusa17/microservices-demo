@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
 
+# Fix review-1: single source of truth for the registry.
+# Change REGISTRY here and it propagates everywhere automatically.
+env:
+  REGISTRY: ghcr.io
+
 jobs:
   # ──────────────────────────────────────────────────────────────
   # JOB 1: Build Docker images and push to GitHub Container Registry
@@ -16,20 +21,30 @@ jobs:
       packages: write   # required to push to ghcr.io
 
     outputs:
-      # Fix 3: expose the exact SHA-tagged image reference so the deploy
-      # job pulls the same image that was just built, not a stale :latest.
-      vote_image:   ghcr.io/${{ github.repository_owner }}/vote:${{ steps.meta-vote.outputs.version }}
-      result_image: ghcr.io/${{ github.repository_owner }}/result:${{ steps.meta-result.outputs.version }}
-      worker_image: ghcr.io/${{ github.repository_owner }}/worker:${{ steps.meta-worker.outputs.version }}
+      # Fix review-1+2: image refs are built from steps.vars.outputs.*
+      # so the registry/repo path is defined once and the SHA comes
+      # directly from $GITHUB_SHA (not from metadata-action internals).
+      vote_image:   ${{ steps.vars.outputs.image_base }}/vote:${{ steps.vars.outputs.sha_short }}
+      result_image: ${{ steps.vars.outputs.image_base }}/result:${{ steps.vars.outputs.sha_short }}
+      worker_image: ${{ steps.vars.outputs.image_base }}/worker:${{ steps.vars.outputs.sha_short }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fix review-1+2: compute image_base and sha_short once here.
+      # All subsequent steps and the job outputs reference these values.
+      # sha_short uses $GITHUB_SHA directly — no dependency on metadata-action behavior.
+      - name: Set image base and short SHA
+        id: vars
+        run: |
+          echo "image_base=${{ env.REGISTRY }}/${{ github.repository_owner }}" >> $GITHUB_OUTPUT
+          echo "sha_short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -38,7 +53,7 @@ jobs:
         id: meta-vote
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/vote
+          images: ${{ steps.vars.outputs.image_base }}/vote
           tags: |
             type=sha,prefix=
             type=raw,value=latest
@@ -55,7 +70,7 @@ jobs:
         id: meta-result
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/result
+          images: ${{ steps.vars.outputs.image_base }}/result
           tags: |
             type=sha,prefix=
             type=raw,value=latest
@@ -72,7 +87,7 @@ jobs:
         id: meta-worker
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/worker
+          images: ${{ steps.vars.outputs.image_base }}/worker
           tags: |
             type=sha,prefix=
             type=raw,value=latest
@@ -101,12 +116,10 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Fix 3: use the SHA-tagged images from the build-and-push outputs
-      # instead of hardcoding :latest, so we deploy exactly what was built.
       - name: Pull images and deploy
         env:
           VOTE_IMAGE:   ${{ needs.build-and-push.outputs.vote_image }}
@@ -121,7 +134,6 @@ jobs:
           sleep 90
           docker compose ps
 
-      # Fix 1: use { ...; exit 1; } so a failed curl actually fails the job.
       - name: Verify vote app is responding
         run: |
           curl --retry 10 --retry-delay 5 --retry-connrefused -f http://localhost:8080 \
@@ -134,7 +146,6 @@ jobs:
             && echo "Result app OK" \
             || { echo "Result app not responding after retries"; exit 1; }
 
-      # Fix 2: step was missing its run block — added docker compose logs.
       - name: Print logs on failure
         if: failure()
         run: docker compose logs
