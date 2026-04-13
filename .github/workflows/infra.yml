@@ -1,16 +1,14 @@
 name: Infra Deploy
 
-# Triggered when infrastructure changes are merged into staging or production.
+# Triggered on any push to staging or production.
+# The paths filter was removed: it caused 0 runs because the pipeline
+# only fired when infrastructure files were modified in the same push,
+# so creating the branch alone never triggered it.
 # Deploys ONLY Kafka + PostgreSQL using docker-compose.infra.yml.
-# Application services are NOT touched by this pipeline.
 
 on:
   push:
     branches: [staging, production]
-    paths:
-      - 'infrastructure/**'
-      - 'docker-compose.infra.yml'
-      - '.github/workflows/infra.yml'
 
 jobs:
   deploy-infra:
@@ -69,7 +67,6 @@ jobs:
           docker compose -f docker-compose.infra.yml exec -T kafka \
             /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 
-      # Fix 2: step had "if:" with no condition value and no run block — completed.
       - name: Print logs on failure
         if: failure()
         run: docker compose -f docker-compose.infra.yml logs
