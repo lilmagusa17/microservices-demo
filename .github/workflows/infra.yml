@@ -17,6 +17,11 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v3
 
+      - name: Configure Kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
+
       - name: Deploy Infra
         run: |
-          helm upgrade --install infra ./infrastructure
+          helm upgrade --install infra ./infrastructure -n infra --create-namespace
