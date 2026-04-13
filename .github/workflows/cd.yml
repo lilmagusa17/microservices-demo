@@ -10,25 +10,33 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login Docker Hub
-        run: docker login -u ${{ secrets.USER }} -p ${{ secrets.PASS }}
+        run: echo "${{ secrets.PASS }}" | docker login -u "${{ secrets.USER }}" --password-stdin
 
-      - name: Build & Push
+      - name: Build & Push Images
         run: |
-          docker build -t ${{ secrets.USER }}/vote ./vote
-          docker push ${{ secrets.USER }}/vote
+          docker build -t ${{ secrets.USER }}/vote:latest ./vote
+          docker push ${{ secrets.USER }}/vote:latest
 
-          docker build -t ${{ secrets.USER }}/result ./result
-          docker push ${{ secrets.USER }}/result
+          docker build -t ${{ secrets.USER }}/result:latest ./result
+          docker push ${{ secrets.USER }}/result:latest
 
-          docker build -t ${{ secrets.USER }}/worker ./worker
-          docker push ${{ secrets.USER }}/worker
+          docker build -t ${{ secrets.USER }}/worker:latest ./worker
+          docker push ${{ secrets.USER }}/worker:latest
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Configure Kubeconfig
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
+
       - name: Deploy with Helm
         run: |
-          helm upgrade --install app ./infrastructure
+          helm upgrade --install app ./infrastructure -n app --create-namespace

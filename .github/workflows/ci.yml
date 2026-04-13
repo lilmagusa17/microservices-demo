@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [develop, feature/*]
+    branches: [dev, feature/*]
   pull_request:
-    branches: [develop]
+    branches: [dev]
 
 jobs:
   build-test:
@@ -12,27 +12,33 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      #VOTE
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.1
+
+      # VOTE
       - name: Build Vote (Maven)
         run: |
           cd vote
           mvn clean package
 
-      #RESULT
+      # RESULT
       - name: Install Result deps
         run: |
           cd result
           npm install
 
-      #WORKER
+      # WORKER (FIXED)
       - name: Build Worker
         run: |
           cd worker
-          go build -o app
+          go mod download
+          go build -o app ./...
 
-      #DOKER
+      # DOCKER
       - name: Build Docker images
         run: |
           docker build -t vote ./vote
