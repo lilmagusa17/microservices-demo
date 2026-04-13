@@ -18,8 +18,5 @@ jobs:
           chmod +x okteto
           sudo mv okteto /usr/local/bin/okteto
 
-      - name: Okteto Login
-        run: okteto context use https://cloud.okteto.com --token ${{ secrets.OKTETO_TOKEN }}
-
       - name: Deploy to Okteto
         run: okteto deploy
