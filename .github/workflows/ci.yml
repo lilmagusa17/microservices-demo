@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, feature/*]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      #VOTE
+      - name: Build Vote (Maven)
+        run: |
+          cd vote
+          mvn clean package
+
+      #RESULT
+      - name: Install Result deps
+        run: |
+          cd result
+          npm install
+
+      #WORKER
+      - name: Build Worker
+        run: |
+          cd worker
+          go build -o app
+
+      #DOKER
+      - name: Build Docker images
+        run: |
+          docker build -t vote ./vote
+          docker build -t result ./result
+          docker build -t worker ./worker
