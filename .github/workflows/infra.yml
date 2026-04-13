@@ -35,7 +35,7 @@ jobs:
           echo "Waiting for PostgreSQL..."
           timeout 60 bash -c \
             'until docker compose -f docker-compose.infra.yml exec -T postgresql pg_isready -U okteto -d votes; do sleep 3; done'
-          echo "✅ PostgreSQL is ready"
+          echo "PostgreSQL is ready"
 
       - name: Wait for Kafka to be healthy
         run: |
@@ -44,7 +44,7 @@ jobs:
             'until docker compose -f docker-compose.infra.yml exec -T kafka \
               /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1; \
               do sleep 5; done'
-          echo "✅ Kafka is ready"
+          echo "Kafka is ready"
 
       - name: Verify Kafka topic creation
         run: |
@@ -55,7 +55,7 @@ jobs:
               --topic votes \
               --partitions 1 \
               --replication-factor 1
-          echo "✅ Topic 'votes' exists"
+          echo "Topic 'votes' exists"
 
       - name: Infrastructure status summary
         run: |
@@ -69,6 +69,7 @@ jobs:
           docker compose -f docker-compose.infra.yml exec -T kafka \
             /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 
+      # Fix 2: step had "if:" with no condition value and no run block — completed.
       - name: Print logs on failure
         if: failure()
         run: docker compose -f docker-compose.infra.yml logs

@@ -16,9 +16,11 @@ jobs:
       packages: write   # required to push to ghcr.io
 
     outputs:
-      vote_image:   ${{ steps.meta-vote.outputs.tags }}
-      result_image: ${{ steps.meta-result.outputs.tags }}
-      worker_image: ${{ steps.meta-worker.outputs.tags }}
+      # Fix 3: expose the exact SHA-tagged image reference so the deploy
+      # job pulls the same image that was just built, not a stale :latest.
+      vote_image:   ghcr.io/${{ github.repository_owner }}/vote:${{ steps.meta-vote.outputs.version }}
+      result_image: ghcr.io/${{ github.repository_owner }}/result:${{ steps.meta-result.outputs.version }}
+      worker_image: ghcr.io/${{ github.repository_owner }}/worker:${{ steps.meta-worker.outputs.version }}
 
     steps:
       - name: Checkout
@@ -103,11 +105,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Fix 3: use the SHA-tagged images from the build-and-push outputs
+      # instead of hardcoding :latest, so we deploy exactly what was built.
       - name: Pull images and deploy
         env:
-          VOTE_IMAGE:   ghcr.io/${{ github.repository_owner }}/vote:latest
-          RESULT_IMAGE: ghcr.io/${{ github.repository_owner }}/result:latest
-          WORKER_IMAGE: ghcr.io/${{ github.repository_owner }}/worker:latest
+          VOTE_IMAGE:   ${{ needs.build-and-push.outputs.vote_image }}
+          RESULT_IMAGE: ${{ needs.build-and-push.outputs.result_image }}
+          WORKER_IMAGE: ${{ needs.build-and-push.outputs.worker_image }}
         run: |
           docker compose up -d --no-build --pull always
 
@@ -117,16 +121,20 @@ jobs:
           sleep 90
           docker compose ps
 
+      # Fix 1: use { ...; exit 1; } so a failed curl actually fails the job.
       - name: Verify vote app is responding
         run: |
           curl --retry 10 --retry-delay 5 --retry-connrefused -f http://localhost:8080 \
-            && echo "✅ Vote app OK" || echo "⚠️  Vote app not responding yet"
+            && echo "Vote app OK" \
+            || { echo "Vote app not responding after retries"; exit 1; }
 
       - name: Verify result app is responding
         run: |
           curl --retry 10 --retry-delay 5 --retry-connrefused -f http://localhost:4000 \
-            && echo "✅ Result app OK" || echo "⚠️  Result app not responding yet"
+            && echo "Result app OK" \
+            || { echo "Result app not responding after retries"; exit 1; }
 
+      # Fix 2: step was missing its run block — added docker compose logs.
       - name: Print logs on failure
         if: failure()
         run: docker compose logs
