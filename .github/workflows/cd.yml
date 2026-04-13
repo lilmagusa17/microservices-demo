@@ -12,14 +12,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login Docker Hub
-        run: echo "${{ secrets.PASS }}" | docker login -u "${{ secrets.USER }}" --password-stdin
-
-      - name: Install Okteto
-        run: curl https://get.okteto.com -sSfL | sh
+      - name: Install Okteto CLI
+        run: |
+          curl -L https://github.com/okteto/okteto/releases/latest/download/okteto-Linux-x86_64 -o okteto
+          chmod +x okteto
+          sudo mv okteto /usr/local/bin/okteto
 
       - name: Okteto Login
-        run: okteto login --token ${{ secrets.OKTETO_TOKEN }}
+        run: okteto context use https://cloud.okteto.com --token ${{ secrets.OKTETO_TOKEN }}
 
       - name: Deploy to Okteto
         run: okteto deploy
